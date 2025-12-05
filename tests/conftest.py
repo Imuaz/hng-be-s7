@@ -3,14 +3,20 @@ Pytest fixtures for testing.
 """
 
 import pytest
+import os
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.models.auth import User, APIKey
 from app.utils.security import get_password_hash
-from main import app
 from datetime import datetime, timedelta
+
+# Set test environment
+os.environ["TESTING"] = "1"
+
+# NOW import the app AFTER setting the environment
+from main import app
 
 # Test database URL (in-memory SQLite for testing)
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -48,17 +54,21 @@ def client(db):
     Create a test client with database override.
     """
 
+    # Override the database dependency to use test database
     def override_get_db():
         try:
             yield db
         finally:
             pass
 
+    # Apply the override before creating client
     app.dependency_overrides[get_db] = override_get_db
 
-    with TestClient(app) as test_client:
+    # Create test client (without triggering lifespan)
+    with TestClient(app, raise_server_exceptions=True) as test_client:
         yield test_client
 
+    # Clear overrides after test
     app.dependency_overrides.clear()
 
 

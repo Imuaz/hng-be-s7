@@ -15,10 +15,13 @@ from app.routers import auth, api_keys, protected
 async def lifespan(app: FastAPI):
     """
     Lifespan events for the application.
-    Creates database tables on startup.
+    Creates database tables on startup (except during testing).
     """
-    # Startup: Create database tables
-    Base.metadata.create_all(bind=engine)
+    # Startup: Create database tables only if not in test mode
+    import os
+
+    if not os.getenv("TESTING"):
+        Base.metadata.create_all(bind=engine)
     yield
     # Shutdown: cleanup if needed
 
