@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.schemas.auth import APIKeyCreate, APIKeyResponse, APIKeyListResponse
-from app.services.api_keys import create_api_key, list_user_api_keys, revoke_api_key
+from app.services.api_keys import (
+    create_api_key,
+    list_user_api_keys,
+    revoke_api_key,
+    delete_api_key,
+)
 from app.dependencies.auth import get_current_auth
+from uuid import UUID
 
 router = APIRouter(prefix="/keys", tags=["API Keys"])
 
@@ -92,12 +98,37 @@ async def list_api_keys(
     return api_keys
 
 
-@router.delete("/{key_id}")
-async def revoke_key(
-    key_id: int, auth: dict = Depends(get_current_auth), db: Session = Depends(get_db)
+@router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_key(
+    key_id: UUID, auth: dict = Depends(get_current_auth), db: Session = Depends(get_db)
 ):
     """
-    Revoke an API key.
+    Permanently delete an API key.
+
+    **Authentication:** Requires JWT Bearer token (user authentication only)
+
+    **Path Parameters:**
+    - `key_id`: ID of the API key to delete
+    """
+    # Only users can delete their API keys
+    if auth["type"] != "user":
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only user accounts can delete API keys",
+        )
+
+    delete_api_key(db, key_id, auth["user_id"])
+    return None
+
+
+@router.post("/{key_id}/revoke")
+async def revoke_key(
+    key_id: UUID, auth: dict = Depends(get_current_auth), db: Session = Depends(get_db)
+):
+    """
+    Revoke an API key (Soft Delete).
 
     **Authentication:** Requires JWT Bearer token (user authentication only)
 
@@ -106,11 +137,6 @@ async def revoke_key(
 
     **Returns:**
     - Success message
-
-    **Errors:**
-    - `401 Unauthorized`: Invalid or missing JWT token
-    - `403 Forbidden`: Only user accounts can revoke API keys
-    - `404 Not Found`: API key not found or doesn't belong to user
     """
     # Only users can revoke their API keys
     if auth["type"] != "user":

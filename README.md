@@ -25,7 +25,7 @@ A production-ready FastAPI application implementing **dual authentication** with
 ### 1. Clone and Setup
 
 ```bash
-cd hng-be-s7
+cd path/to/your/project directory
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -37,11 +37,11 @@ Create a PostgreSQL database:
 
 ```bash
 # Using psql
-createdb auth_db
+createdb <database name>
 
 # Or using SQL
 psql -U postgres
-CREATE DATABASE auth_db;
+CREATE DATABASE <database name>;
 ```
 
 ### 3. Environment Configuration
@@ -55,10 +55,10 @@ cp .env.example .env
 Edit `.env` with your settings:
 
 ```env
-DATABASE_URL=postgresql://username:password@localhost:5432/auth_db
+DATABASE_URL=postgresql://<db_username>:<db_password>@localhost:5432/<database_name>
 SECRET_KEY=your-super-secret-key-min-32-characters
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-API_KEY_EXPIRE_DAYS=365
+ACCESS_TOKEN_EXPIRE_MINUTES= # set the access token expiration time in minutes
+API_KEY_EXPIRE_DAYS= # set the API key expiration time in days
 ```
 
 ### 4. Run the Application
@@ -280,7 +280,7 @@ MIT License - feel free to use this for your projects!
 
 ## 👨‍💻 Author
 
-Built for HNG Stage 7 Task 3
+- [I Muaz](https://github.com/imuaz) - Built for HNG Stage 7 Task 3
 
 ---
 

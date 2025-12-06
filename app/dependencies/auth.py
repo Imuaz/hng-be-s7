@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.auth import User
 from app.utils.security import decode_access_token
 from app.services.api_keys import validate_api_key
+from app.services.auth import is_token_blacklisted
 
 # HTTP Bearer scheme for JWT tokens
 security = HTTPBearer(auto_error=False)
@@ -42,9 +43,24 @@ async def get_current_user_from_token(
     if payload is None:
         return None
 
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    sub = payload.get("sub")
+    if sub is None:
         return None
+
+    try:
+        # Support both int and UUID, but our model uses UUID now.
+        # We just need to ensure it's not None.
+        user_id = sub
+    except (ValueError, TypeError):
+        return None
+
+    # Check if token is blacklisted
+    if is_token_blacklisted(db, token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Get user from database
     user = db.query(User).filter(User.id == user_id).first()

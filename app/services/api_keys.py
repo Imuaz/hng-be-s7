@@ -7,13 +7,17 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from typing import List, Optional
+from uuid import UUID
 from app.models.auth import APIKey
-from app.utils.security import generate_api_key
+from app.utils.security import generate_api_key, get_key_hash
 from app.config import settings
+
+# Simple in-memory cache: {key_hash: (api_key_dict, expiration_timestamp)}
+API_KEY_CACHE = {}
 
 
 def create_api_key(
-    db: Session, user_id: int, name: str, expires_in_days: int = None
+    db: Session, user_id: UUID, name: str, expires_in_days: int = None
 ) -> APIKey:
     """
     Create a new API key for a user.
@@ -31,17 +35,23 @@ def create_api_key(
         expires_in_days = settings.API_KEY_EXPIRE_DAYS
 
     # Generate unique API key
-    key = generate_api_key()
+    plain_key = generate_api_key()
+    key_hash = get_key_hash(plain_key)
 
     # Calculate expiration date
     expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
 
     # Create API key record
-    db_api_key = APIKey(key=key, name=name, user_id=user_id, expires_at=expires_at)
+    db_api_key = APIKey(
+        key_hash=key_hash, name=name, user_id=user_id, expires_at=expires_at
+    )
 
     db.add(db_api_key)
     db.commit()
     db.refresh(db_api_key)
+
+    # Attach plain key to object for one-time display (not persisted)
+    db_api_key.key = plain_key
 
     return db_api_key
 
@@ -60,8 +70,23 @@ def validate_api_key(db: Session, key: str) -> Optional[dict]:
     Raises:
         HTTPException: If API key is expired
     """
+    key_hash = get_key_hash(key)
+
+    # Check cache
+    if key_hash in API_KEY_CACHE:
+        cached_data, valid_until = API_KEY_CACHE[key_hash]
+        if datetime.utcnow() < valid_until:
+            # Update last_used_at in background?
+            # For strictness we skip DB write on cache hit for speed, or use a background task.
+            # Here we prioritized speed, so we skip DB write.
+            return cached_data
+        else:
+            del API_KEY_CACHE[key_hash]
+
     api_key = (
-        db.query(APIKey).filter(APIKey.key == key, APIKey.is_revoked == False).first()
+        db.query(APIKey)
+        .filter(APIKey.key_hash == key_hash, APIKey.is_revoked == False)
+        .first()
     )
 
     if not api_key:
@@ -77,15 +102,20 @@ def validate_api_key(db: Session, key: str) -> Optional[dict]:
     api_key.last_used_at = datetime.utcnow()
     db.commit()
 
-    return {
+    result = {
         "api_key_id": api_key.id,
         "user_id": api_key.user_id,
         "name": api_key.name,
         "type": "service",
     }
 
+    # Cache for 5 minutes
+    API_KEY_CACHE[key_hash] = (result, datetime.utcnow() + timedelta(minutes=5))
 
-def list_user_api_keys(db: Session, user_id: int) -> List[APIKey]:
+    return result
+
+
+def list_user_api_keys(db: Session, user_id: UUID) -> List[APIKey]:
     """
     Get all API keys for a user.
 
@@ -99,9 +129,9 @@ def list_user_api_keys(db: Session, user_id: int) -> List[APIKey]:
     return db.query(APIKey).filter(APIKey.user_id == user_id).all()
 
 
-def revoke_api_key(db: Session, key_id: int, user_id: int) -> APIKey:
+def revoke_api_key(db: Session, key_id: UUID, user_id: UUID) -> APIKey:
     """
-    Revoke an API key.
+    Revoke an API key (Soft Delete).
 
     Args:
         db: Database session
@@ -127,4 +157,61 @@ def revoke_api_key(db: Session, key_id: int, user_id: int) -> APIKey:
     db.commit()
     db.refresh(api_key)
 
+    # Invalidate cache
+    # Since we don't have the original key string here, we can't easily remove it from cache
+    # if the cache key is the hash.
+    # However, since we query DB on cache miss, and revocation updates DB,
+    # we just need to ensure we don't rely on stale cache.
+    # But wait, if cached, we return cached data and ignore DB.
+    # So we MUST invalidate cache.
+    # Problem: 'revoke_api_key' input is 'key_id', not 'key'.
+    # We can't derive 'key_hash' from 'key_id'.
+    # Solution: We can't selectively invalidate efficiently without storing map id->hash.
+    # OR we accept 5 min delay in revocation (acceptable for "Speed").
+    # OR we clear entire cache check (heavy).
+    # OR we add key_hash to cache value so we can iterate.
+
+    # Let's iterate cache to remove by ID (O(N) but N is cache size).
+    keys_to_remove = []
+    for k, (v, _) in API_KEY_CACHE.items():
+        if v["api_key_id"] == key_id:
+            keys_to_remove.append(k)
+
+    for k in keys_to_remove:
+        del API_KEY_CACHE[k]
+
     return api_key
+
+
+def delete_api_key(db: Session, key_id: UUID, user_id: UUID):
+    """
+    Parmanently remove an API key (Hard Delete).
+
+    Args:
+        db: Database session
+        key_id: ID of the API key to delete
+        user_id: ID of the user (for authorization check)
+
+    Raises:
+        HTTPException: If API key not found
+    """
+    api_key = (
+        db.query(APIKey).filter(APIKey.id == key_id, APIKey.user_id == user_id).first()
+    )
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="API key not found"
+        )
+
+    # Invalidate cache before delete
+    keys_to_remove = []
+    for k, (v, _) in API_KEY_CACHE.items():
+        if v["api_key_id"] == key_id:
+            keys_to_remove.append(k)
+
+    for k in keys_to_remove:
+        del API_KEY_CACHE[k]
+
+    db.delete(api_key)
+    db.commit()

@@ -77,3 +77,18 @@ def generate_api_key() -> str:
         API key string with 'sk_' prefix
     """
     return f"sk_{secrets.token_urlsafe(32)}"
+
+
+def get_key_hash(key: str) -> str:
+    """
+    Hash an API key using SHA-256.
+
+    Args:
+        key: The API key to hash
+
+    Returns:
+        Hex digest of the hashed key
+    """
+    import hashlib
+
+    return hashlib.sha256(key.encode()).hexdigest()
