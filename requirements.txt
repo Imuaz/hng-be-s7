@@ -12,10 +12,11 @@ greenlet==3.3.0
 h11==0.16.0
 httptools==0.7.1
 idna==3.11
-passlib==1.7.4
 pyasn1==0.6.1
 pycparser==2.23
-pydantic==2.5.0
+pydantic[email]==2.5.0
+bcrypt==4.1.2
+pydantic-settings==2.1.0
 pydantic_core==2.14.1
 PyJWT==2.8.0
 python-dotenv==1.2.1
