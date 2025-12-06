@@ -26,7 +26,12 @@ class Settings(BaseSettings):
     API_KEY_EXPIRE_DAYS: int = 365
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Parse CORS origins from comma-separated string."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
     class Config:
         env_file = ".env"
