@@ -34,6 +34,16 @@ def create_api_key(
     if expires_in_days is None:
         expires_in_days = settings.API_KEY_EXPIRE_DAYS
 
+    # Check if key with same name already exists for this user
+    existing_key = (
+        db.query(APIKey).filter(APIKey.user_id == user_id, APIKey.name == name).first()
+    )
+    if existing_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API key with this name already exists",
+        )
+
     # Generate unique API key
     plain_key = generate_api_key()
     key_hash = get_key_hash(plain_key)

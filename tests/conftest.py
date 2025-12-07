@@ -7,9 +7,10 @@ import os
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.models.auth import User, APIKey
-from app.utils.security import get_password_hash
+from app.utils.security import get_password_hash, get_key_hash
 from datetime import datetime, timedelta
 
 # Set test environment
@@ -19,11 +20,13 @@ os.environ["TESTING"] = "1"
 from main import app
 
 # Test database URL (in-memory SQLite for testing)
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///:memory:"
 
 # Create test engine
 engine = create_engine(
-    SQLALCHEMY_TEST_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -94,8 +97,9 @@ def sample_api_key(db, sample_user):
     """
     Create a sample API key for testing.
     """
+    plain_key = "sk_test_key_123456789"
     api_key = APIKey(
-        key="sk_test_key_123456789",
+        key_hash=get_key_hash(plain_key),
         name="Test Service",
         user_id=sample_user.id,
         expires_at=datetime.utcnow() + timedelta(days=365),
@@ -104,6 +108,8 @@ def sample_api_key(db, sample_user):
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
+    # Attach plain key for tests to use
+    api_key.key = plain_key
     return api_key
 
 

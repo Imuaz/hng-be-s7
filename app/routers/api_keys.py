@@ -98,7 +98,7 @@ async def list_api_keys(
     return api_keys
 
 
-@router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{key_id}", status_code=status.HTTP_200_OK)
 async def delete_key(
     key_id: UUID, auth: dict = Depends(get_current_auth), db: Session = Depends(get_db)
 ):
@@ -120,7 +120,7 @@ async def delete_key(
         )
 
     delete_api_key(db, key_id, auth["user_id"])
-    return None
+    return {"message": "API key deleted successfully", "key_id": key_id}
 
 
 @router.post("/{key_id}/revoke")

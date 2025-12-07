@@ -60,6 +60,18 @@ class TestCreateAPIKey:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_create_duplicate_api_key_name(self, client, auth_token, sample_api_key):
+        """Test creating an API key with a name that already exists."""
+        # sample_api_key already exists with name "Test Service"
+        response = client.post(
+            "/keys/create",
+            json={"name": "Test Service"},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "already exists" in response.json()["detail"]
+
 
 class TestListAPIKeys:
     """Tests for listing API keys endpoint."""
@@ -101,8 +113,8 @@ class TestListAPIKeys:
 class TestRevokeAPIKey:
     """Tests for API key revocation endpoint."""
 
-    def test_revoke_api_key_success(self, client, auth_token, sample_api_key):
-        """Test successful API key revocation."""
+    def test_delete_api_key_success(self, client, auth_token, sample_api_key):
+        """Test successful API key deletion."""
         response = client.delete(
             f"/keys/{sample_api_key.id}",
             headers={"Authorization": f"Bearer {auth_token}"},
@@ -110,12 +122,15 @@ class TestRevokeAPIKey:
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert "revoked successfully" in data["message"].lower()
+        assert "deleted successfully" in data["message"].lower()
 
     def test_revoke_api_key_not_found(self, client, auth_token):
         """Test revoking non-existent API key."""
+        import uuid
+
+        random_id = uuid.uuid4()
         response = client.delete(
-            "/keys/99999", headers={"Authorization": f"Bearer {auth_token}"}
+            f"/keys/{random_id}", headers={"Authorization": f"Bearer {auth_token}"}
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
